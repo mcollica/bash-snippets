@@ -1,0 +1,167 @@
+#!/bin/bash
+#===================================================================================
+#
+#         NOME:  xmlvalidate
+#
+#          USO:  xmlvalidate {-v | -u | [-o] file.xml [file.xsd]}
+#
+#  DESCRIZIONE:  Questo script facilita la validazione di un documento XML rispetto
+#                a un XML Schema Definition (XSD) attraverso la utility xmllint
+#                (facente parte della libreria 'libxml2').
+#
+#       AUTORE:  Matteo Collica, collicamatteo@gmail.com
+#    COPYRIGHT:  vedi funzione 'version' in basso
+#    CREATO IL:  03.03.2021
+       version=1.0
+      revision=03.03.2021
+#===================================================================================
+
+#-------------------------------------------------
+#  Variabili - prefix per i messaggi
+#-------------------------------------------------
+
+script=$(basename "$0")
+bold=$(tput bold)
+error=$(tput setaf 1)${bold}error:$(tput sgr0)
+green=$(tput setaf 2)
+warning=$(tput setaf 3)${bold}warning:$(tput sgr0)
+
+#------------------------------
+#  Variabili - codici di errore
+#------------------------------
+
+E_NO_PARAMS=1
+E_WEIRD_PARAMS=2
+E_IS_NOT_FILE=3
+E_IS_NOT_XML=4
+
+#===  FUNZIONE  ================================================================
+#         NOME:  exit_with_error
+#  DESCRIZIONE:  Mostra informazioni di uso per lo script e termina con status $1
+# PARAMETRO  1:  exit status con cui terminare lo script dopo aver stampato l'uso
+# PARAMETRO  2:  errore da stampare nel canale stderr
+#===============================================================================
+
+exit_with_error()
+{
+  echo "$2" >&2
+
+  func_usage
+
+  exit $1
+}
+
+#===  FUNZIONE  =================================================
+#         NOME:  usage
+#  DESCRIZIONE:  Mostra informazioni di uso per lo script
+#================================================================
+
+func_usage() {
+  [ -n "$1" ] && echo "xmlvalidate bash script versione $version"
+  echo "Uso: xmlvalidate {-v | -u | [-o] file.xml [file.xsd]}"
+}
+
+#===  FUNZIONE  =========================================================================
+#         NOME:  version
+#  DESCRIZIONE:  Mostra la versione e il copyright notice dello script
+#========================================================================================
+
+func_version() {
+  echo "xmlvalidate $version ($revision)
+
+  Copyright (C) 2021 Matteo Collica
+  Licenza GPLv3+: GNU GPL versione 3 o successiva <http://www.gnu.org/licenses/gpl.html>.
+  Questo è software libero: siete liberi di modificarlo e redistribuirlo.
+  Non c'è ALCUNA GARANZIA, negli estremi permessi dalla legge.
+
+  Scritto da Matteo Collica (https://github.com/mcollica)
+  Inviare segnalazioni di bug e suggerimenti a <collicamatteo@gmail.com>."
+}
+
+#------------------------------------------------------------------------------
+# Se è stata specificata un'opzione allora viene interpretata
+#------------------------------------------------------------------------------
+
+case "$1" in
+  --help | --hel | --he | -h | --usage | --usag | --usa | --us | -u)
+    func_usage 1; exit 0 ;;
+  --version | --versio | --versi | --vers | --ver | --ve | -v )
+    func_version; exit 0 ;;
+  --output | --outpu | --outp | --out | --ou | -o)
+    shift; out=true ;;
+  -*)
+    exit_with_error $E_WEIRD_PARAMS "$(basename "$0"): opzione '$1' non valida"
+    ;;
+esac
+
+#----------------------------------------------------------------------------------------------
+# Se gli argomenti sono stati inseriti invertiti allora stampa un warning
+#----------------------------------------------------------------------------------------------
+
+if [[ -n "$1" ]] && [[ "${1#*.}" == "xsd" ]] && [[ -n "$2" ]] && [[ "${2#*.}" == "xml" ]]; then
+  echo -e \
+  "$bold$script: $warning probabilmente è stato invertito l'ordine degli argomenti, " \
+  "assicurarsi di aver specificato prima il file .xml e poi il file .xsd, " \
+  "inserire solo uno dei due, o rinominare i due file coerentemente (come estensione)\n"
+fi
+
+[[ -n "$1" ]] && xml="$1"
+[[ -n "$2" ]] && xsd="$2"
+
+#-----------------------------------------------------------------------------
+# Verifica della correttezza del file XML
+#-----------------------------------------------------------------------------
+
+if [ -z "$xml" ]; then
+  exit_with_error $E_NO_PARAMS "$bold$script: $error argomenti mancanti!"
+elif [ ! -f "$xml" ]; then
+  exit_with_error $E_IS_NOT_FILE "$bold$script: $error $xml: file inesistente"
+elif [[ "$(file "$xml")" != *XML* ]]; then
+  exit_with_error $E_IS_NOT_XML \
+  "$bold$script: $error linguaggio del file $xml non riconosciuto come XML"
+fi
+
+#------------------------------------------------------------
+# Impostazione della prima parte del comando in una variabile
+#------------------------------------------------------------
+
+
+if [ -n "$out" ] && [ "$out" == true ]; then
+  comando_xmllint=("xmllint" "$xml")
+else
+  comando_xmllint=("xmllint" "--noout" "$xml")
+fi
+
+#-------------------------------------------------------------------------------
+# Verifica della correttezza del file XSD
+#-------------------------------------------------------------------------------
+
+if [ -n "$xsd" ]; then
+  if [[ ! -f "$xsd" ]]; then
+    exit_with_error $E_IS_NOT_FILE "$bold$script: $error $xsd: file inesistente"
+  elif [[ "$(file "$xml")" == *XML* ]]; then
+    comando_xmllint+=("--schema" "$xsd")
+  else
+    exit_with_error $E_IS_NOT_XML \
+    "$bold$script: $error linguaggio dello schema $xsd non riconosciuto come XML"
+  fi
+fi
+
+#-----------------------------------------------------------------------------
+# Avviso (warning) se il file XML e il file XSD sono identici
+# (perché potrebbe trattarsi di una svista negli argomenti dati dall'operatore)
+#-----------------------------------------------------------------------------
+
+cmp --silent "$xml" "$xsd" && echo -e \
+  "$bold$script: $warning '$xml' e '$xsd' hanno lo stesso contenuto\n"
+
+#------------------------------------------------------------------------------------
+# Esecuzione del comando ed eventuale interpretazione del risultato
+#------------------------------------------------------------------------------------
+
+echo -e "Eseguendo il comando: \"${comando_xmllint[*]}\" ...\n"
+if [ -z "$xsd" ]; then
+ [ -z "$("${comando_xmllint[@]}")" ] && echo "$green""Il documento XML è well-formed"
+else
+ exec "${comando_xmllint[@]}"
+fi
